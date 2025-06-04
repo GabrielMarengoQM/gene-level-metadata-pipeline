@@ -1,0 +1,27 @@
+# RStudio project files
+*.Rproj
+.Rproj.user/
+
+# R history and workspace files
+.Rhistory
+.RData
+.Ruserdata
+
+# Caches and logs
+.Rcache/
+.Rcheck/
+.Rapp.history
+
+# macOS system files
+.DS_Store
+
+# Quarto and knitr output directories
+_cache/
+_output/
+
+# VS Code
+.vscode/
+
+# Python virtual envs
+venv/
+.env/

@@ -1,0 +1,5 @@
+# gene-annotations-pipeline
+
+A reproducible pipeline for fetching and processing diverse datasets related to gene essentiality, function, and clinical phenotypes.  
+
+The pipeline automates the integration of multi-source genomic data, including FTP, API, and manual inputs, and outputs harmonized gene-level annotations for downstream analysis.

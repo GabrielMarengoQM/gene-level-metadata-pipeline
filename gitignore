@@ -25,3 +25,6 @@ _output/
 # Python virtual envs
 venv/
 .env/
+
+# Data > 100mb is not allowed to GH
+data/

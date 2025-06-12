@@ -16,7 +16,11 @@ scones <- openxlsx::read.xlsx("./data/raw/manuscript-files/pnas.2001248118.sd01.
 domino <- readr::read_tsv("./data/raw/manuscript-files/score_all_final_19.02.19.txt")
 
 # Pluripotency and fitness scores (Rosen 2024)
-rosen_2024 <- openxlsx::read.xlsx("./data/raw/manuscript-files/41467_2024_53284_MOESM4_ESM.xlsx", startRow = 2)
+rosen24_NE_pluripotency_score <- openxlsx::read.xlsx("./data/raw/manuscript-files/41467_2024_53284_MOESM4_ESM.xlsx", sheet=1) 
+rosen24_DE_pluripotency_score <- openxlsx::read.xlsx("./data/raw/manuscript-files/41467_2024_53284_MOESM4_ESM.xlsx", sheet=2) 
+rosen24_E8_self_renewel_score <- openxlsx::read.xlsx("./data/raw/manuscript-files/41467_2024_53284_MOESM4_ESM.xlsx", sheet=3) 
+rosen24_E6_self_renewel_score <- openxlsx::read.xlsx("./data/raw/manuscript-files/41467_2024_53284_MOESM4_ESM.xlsx", sheet=4) 
+ 
 
 # GISMO, GISMO missense
 gismo <- openxlsx::read.xlsx("./data/raw/manuscript-files/media-2.xlsx", sheet = 'Supplementary Table 2')

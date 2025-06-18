@@ -13,44 +13,105 @@ protein.coding.genes <- arrow::read_parquet('./data/raw/api-ftp/protein.coding.g
 gene_ids <- protein.coding.genes %>% 
   dplyr::select(symbol, hgnc_id, entrez_id, ensembl_gene_id, vega_id, ucsc_id, omim_id) 
 
-# Prev/alias names
-prev_names <- protein.coding.genes %>% 
+# Prev names
+prev_names1 <- protein.coding.genes %>% 
   dplyr::select(symbol, prev_symbol) %>% 
-  separate_rows(prev_symbol, sep = "\\|")
+  separate_rows(prev_symbol, sep = "\\|") %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol) %>% 
+  filter(prev_symbol != "")
 
-alias_names <- protein.coding.genes %>% 
+prev_names <- hgnc_symbol_template_func() %>% 
+  left_join(prev_names1) %>% 
+  distinct()
+
+# Alias names
+alias_names1 <- protein.coding.genes %>% 
   dplyr::select(symbol, alias_symbol) %>% 
-  separate_rows(alias_symbol, sep = "\\|")
+  separate_rows(alias_symbol, sep = "\\|") %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol) %>% 
+  filter(alias_symbol != "")
+
+alias_names <- hgnc_symbol_template_func() %>% 
+  left_join(alias_names1) %>% 
+  distinct()
 
 # human mouse mappings
 mouse_ids <- protein.coding.genes %>% 
   dplyr::select(symbol, mgd_id) %>% 
-  tidyr::separate_rows(mgd_id, sep = '\\|')
+  tidyr::separate_rows(mgd_id, sep = '\\|') %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol) %>% 
+  filter(mgd_id != "")
+
+hgnc_symbol_mgi_id_mappings <- hgnc_symbol_template_func() %>% 
+  left_join(mouse_ids) %>% 
+  distinct()
+
 
 # gene uniprot protein mappings
 uniprot_ids <- protein.coding.genes %>% 
   dplyr::select(symbol, uniprot_ids) %>%
-  tidyr::separate_rows(uniprot_ids, sep = '\\|')
+  tidyr::separate_rows(uniprot_ids, sep = '\\|') %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol) %>% 
+  filter(uniprot_ids != "")
+
+hgnc_symbol_uniprot_id_mappings <- hgnc_symbol_template_func() %>% 
+  left_join(uniprot_ids) %>% 
+  distinct()
 
 # gene name
-gene_names <- protein.coding.genes %>% 
-  dplyr::select(symbol, name)
+gene_names1 <- protein.coding.genes %>% 
+  dplyr::select(symbol, name) %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol) %>% 
+  filter(name != "")
+
+gene_names <- hgnc_symbol_template_func() %>% 
+  left_join(gene_names1) %>% 
+  distinct()
 
 # gene group
-gene_groups <- protein.coding.genes %>% 
+gene_groups1 <- protein.coding.genes %>% 
   dplyr::select(symbol, gene_group) %>% 
   tidyr::separate_rows(gene_group, sep = "\\|") %>% 
   filter(!is.na(gene_group)) %>% 
+  filter(gene_group != "") %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol) %>% 
   filter(gene_group != "")
 
+gene_groups <- hgnc_symbol_template_func() %>% 
+  left_join(gene_groups1) %>% 
+  distinct()
+
 # chromosome, positions, length
-gene_position_length<- arrow::read_parquet('./data/raw/api-ftp/gene_position_gc_content.parquet') %>% 
+chromosomes <- c(as.character(1:22), "X", "Y")
+latest_ensg_id <- protein.coding.genes %>% pull(ensembl_gene_id)
+gene_position_length1 <- arrow::read_parquet('./data/raw/api-ftp/gene_position_gc_content.parquet') %>% 
   dplyr::mutate(gene_length = end_position - start_position + 1) %>% 
-  dplyr::select(-percentage_gene_gc_content)
+  dplyr::select(-percentage_gene_gc_content) %>% 
+  dplyr::rename(hgnc_gene_symbol = hgnc_symbol) %>% 
+  filter(ensembl_gene_id %in% latest_ensg_id) %>% 
+  filter(chromosome_name != "") %>% 
+  filter(chromosome_name %in% chromosomes) %>% 
+  filter(start_position != "") %>% 
+  filter(end_position != "") %>% 
+  filter(gene_length != "") %>% 
+  distinct()
+
+gene_position_length <- hgnc_symbol_template_func() %>% 
+  left_join(gene_position_length1) %>% 
+  distinct()
 
 # GC content
-gene_gc_content <- arrow::read_parquet('./data/raw/api-ftp/gene_position_gc_content.parquet') %>% 
-  dplyr::select(hgnc_symbol, percentage_gene_gc_content)
+gene_gc_content1 <- arrow::read_parquet('./data/raw/api-ftp/gene_position_gc_content.parquet') %>% 
+  dplyr::select(hgnc_symbol, percentage_gene_gc_content, chromosome_name, ensembl_gene_id) %>% 
+  dplyr::rename(hgnc_gene_symbol = hgnc_symbol) %>% 
+  filter(ensembl_gene_id %in% latest_ensg_id) %>% 
+  filter(percentage_gene_gc_content != "") %>% 
+  filter(chromosome_name %in% chromosomes) %>% 
+  dplyr::select(-chromosome_name, -ensembl_gene_id)
+
+gene_gc_content <- hgnc_symbol_template_func() %>% 
+  left_join(gene_gc_content1) %>% 
+  distinct()
 
 # Proteins/Proteomics ----
 
@@ -216,6 +277,64 @@ reactome_annotations2 <- reactome_annotations %>%
   filter(!is.na(gene_symbol))
 
 # Human Disease & Phenotypes ----
+
+# OMIM genemap 
+genemap <- arrow::read_parquet('./data/raw/api-ftp/genemap.parquet')
+
+# Split phenotypes across new rows for one2many gene-pheno mappings
+genemap_2 <- genemap %>%
+  separate_rows(Phenotypes, sep = "; ")
+
+# Grep mois
+moi_keywords <- c("Autosomal recessive", "Autosomal dominant", "Digenic recessive", "Digenic dominant",
+                  "Somatic mutation", "Multifactorial", "Isolated cases", "Mitochondrial",
+                  "Pseudoautosomal dominant", "Pseudoautosomal recessive", "X-linked recessive",
+                  "X-linked dominant", "X-linked", "Y-linked")
+
+genemap_3 <- genemap_2 %>%
+  mutate(moi = sapply(str_extract_all(Phenotypes, paste(moi_keywords, collapse = "|")), 
+                      paste, collapse = "; ")) %>%
+  separate_rows(moi, sep = "; ")
+
+# Grep symbols
+genemap_4 <- genemap_3 %>%
+  mutate(symbol_key = case_when(
+    grepl("^\\{", Phenotypes) ~ "Mutations that contribute to susceptibility to multifactorial disorders",
+    grepl("^\\[", Phenotypes) ~ "Nondiseases",
+    grepl("^\\?", Phenotypes) ~ "The relationship between the phenotype and gene is provisional",
+    TRUE ~ NA_character_  # Handle other cases if needed
+  ))
+
+# Grep numbers
+genemap_5 <- genemap_4 %>%
+  mutate(number_key = case_when(
+    grepl("\\(1)", Phenotypes) ~ "The disorder is placed on the map based on its association with a gene, but the underlying defect is not known",
+    grepl("\\(2)", Phenotypes) ~ "The disorder has been placed on the map by linkage or other statistical method; no mutation has been found",
+    grepl("\\(3)", Phenotypes) ~ "The molecular basis for the disorder is known; a mutation has been found in the gene",
+    grepl("\\(4)", Phenotypes) ~ "A contiguous gene deletion or duplication syndrome, multiple genes are deleted or duplicated causing the phenotype",
+    TRUE ~ NA_character_  # Handle other cases if needed
+  ))
+
+# Get phenotype id
+genemap_6 <- genemap_5 %>%
+  mutate(phenotype_id = str_extract(Phenotypes, "\\d{6}"))
+
+# Get Phenotype
+genemap_7 <- genemap_6 %>%
+  mutate(phenotypes = str_extract(Phenotypes, "^(.*?)(?=\\d{6})")) %>%
+  mutate(phenotypes = str_replace_all(phenotypes, "[\\{\\[\\?\\]\\}]", "")) %>%
+  mutate(phenotypes = str_replace(phenotypes, ", $", "")) 
+
+genemap8 <- genemap_7 %>%
+  dplyr::select(`Approved.Gene.Symbol`, moi, symbol_key, number_key, phenotype_id, phenotypes) %>%
+  filter(!is.na(`Approved.Gene.Symbol`))
+
+genemap9 <- genemap8 %>% 
+  rename(hgnc_gene_symbol = `Approved.Gene.Symbol`) %>% 
+  filter(hgnc_gene_symbol != "") %>% 
+  filter(!is.na(phenotypes))
+
+
 
 # lethal phenotypes
 lethal.phenotypes <- arrow::read_parquet('./data/raw/api-ftp/lethal.phenotypes.parquet')

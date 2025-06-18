@@ -37,7 +37,7 @@ tryCatch({
   my_genes <- protein.coding.genes$symbol
   ensembl <- biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
   gene_position_gc_content <- biomaRt::getBM(
-    attributes = c("hgnc_symbol", "chromosome_name", "start_position", "end_position", "percentage_gene_gc_content"),
+    attributes = c("hgnc_symbol", "chromosome_name", "start_position", "end_position", "percentage_gene_gc_content", "ensembl_gene_id"),
     filters = "hgnc_symbol",
     values = my_genes,
     mart = ensembl

@@ -171,6 +171,17 @@ gnomAD <- hgnc_symbol_template_func() %>%
   left_join(gnomad5) %>% 
   distinct()
 
+# canon_transcripts <- data.frame(canon_transcripts = canonical_transcripts)
+# 
+# genes_with_mane_flag <- gnomad2 %>% filter(gnomad_mane_select == "true") %>% pull(gene)
+# 
+# gnomad_no_mane_canonical <- gnomad2 %>% 
+#   dplyr::select(gene, gnomad_transcript, gnomad_mane_select) %>% 
+#   filter(!gene %in% genes_with_mane_flag) %>% 
+#   filter(gene %in% protein.coding.genes$symbol) %>% 
+#   filter(!gnomad_transcript %in% mane_transcripts) %>% 
+#   filter(!gnomad_transcript %in% canonical_transcripts) 
+
 # Mouse assays ----
 # impc window of lethality
 wol2 <- wol %>% 

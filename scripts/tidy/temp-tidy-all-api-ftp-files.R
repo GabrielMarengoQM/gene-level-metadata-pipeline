@@ -11,7 +11,14 @@ protein.coding.genes <- arrow::read_parquet('./data/raw/api-ftp/protein.coding.g
 
 # Gene IDs
 gene_ids <- protein.coding.genes %>% 
-  dplyr::select(symbol, hgnc_id, entrez_id, ensembl_gene_id, vega_id, ucsc_id, omim_id) 
+  dplyr::select(symbol, hgnc_id, entrez_id, ensembl_gene_id, vega_id, ucsc_id, omim_id) %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol) %>% 
+  dplyr::mutate(entrez_id = as.character(entrez_id)) %>% 
+  dplyr::mutate(across(everything(), ~na_if(.x, "")))
+  
+Gene_IDs <- hgnc_symbol_template_func() %>% 
+  left_join(gene_ids) %>% 
+  distinct()
 
 # Prev names
 prev_names1 <- protein.coding.genes %>% 
@@ -118,6 +125,16 @@ gene_gc_content <- hgnc_symbol_template_func() %>%
 # PANTHER protein classes
 panther_data_shortcols <- arrow::read_parquet('./data/raw/api-ftp/panther_data_shortcols.parquet') %>% 
   left_join(uniprot_ids, by = c("UNIPROT" = "uniprot_ids"))
+# CONVERT TO LOWER CASE AND KEEP FIRST LETTER CAPITALISED
+
+PANTHERdb <- hgnc_symbol_template_func() %>% 
+  left_join(panther_data_shortcols) %>% 
+  mutate(
+    CLASS_TERM = str_to_sentence(str_to_lower(CLASS_TERM)),
+    FAMILY_TERM = str_to_sentence(str_to_lower(FAMILY_TERM)),
+    SUBFAMILY_TERM = str_to_sentence(str_to_lower(SUBFAMILY_TERM))
+  ) %>% 
+  distinct()
 
 # string ppi interactions
 interactions <- arrow::read_parquet('./data/raw/api-ftp/ppi_interactions.parquet')
@@ -162,7 +179,16 @@ string_ppi_df <- interactions_cleaned_hgnc %>%
   left_join(symbol_hgnc_mappings) %>% 
   filter(!is.na(combined_score)) %>% 
   mutate(combined_score = combined_score/1000) %>% 
-  dplyr::select(gene_symbol, protein1_string_id, protein2_string_id, combined_score)
+  dplyr::select(gene_symbol, protein1_string_id, protein2_string_id, protein2_gene_symbol, combined_score) %>% 
+  dplyr::rename(
+    hgnc_gene_symbol = gene_symbol, 
+    string_id = protein1_string_id, 
+    Interaction_string_id = protein2_string_id,
+    Interaction_hgnc_gene_symbol = protein2_gene_symbol)
+
+STRING_ppi <- hgnc_symbol_template_func() %>% 
+  left_join(string_ppi_df) %>% 
+  distinct()
 
 # Mouse Perturbation Assays ----
 
@@ -191,6 +217,11 @@ conflicts <- mouse.viability.impc2 %>% # remove conflicts that arise from one2ma
 
 mouse.viability.impc3 <- mouse.viability.impc2 %>%
   filter(gene_symbol %in% conflicts$gene_symbol) %>%
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) %>% 
+  distinct()
+
+IMPC_viability <- hgnc_symbol_template_func() %>% 
+  left_join(mouse.viability.impc3) %>% 
   distinct()
 
 # impc phenotypes 
@@ -204,7 +235,12 @@ mouse.phenotypes.impc2 <- mouse_phenotypes_impc %>%
                 mp_id = mp_term_id) %>%
   dplyr::distinct() %>%
   left_join(human_mouse_genes) %>%
-  dplyr::filter(!is.na(gene_symbol))
+  dplyr::filter(!is.na(gene_symbol)) %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) 
+
+IMPC_phenotypes <- hgnc_symbol_template_func() %>% 
+  left_join(mouse.phenotypes.impc2) %>% 
+  distinct()
 
 # mgi
 lethal_terms <- mp_lethal_terms$x
@@ -227,7 +263,18 @@ mouse.viability.mgi2 <- mouse_viability_mgi %>%
   distinct() 
 mouse.viability.mgi3 <- mouse.viability.mgi2 %>% 
   left_join(human_mouse_genes) %>%
-  filter(!is.na(gene_symbol))
+  filter(!is.na(gene_symbol)) %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) %>% 
+  dplyr::select(-mgi_id)
+
+MGI_viability1 <- hgnc_symbol_template_func() %>% 
+  left_join(mouse.viability.mgi3) %>% 
+  distinct()
+dups <- MGI_viability1 %>% count(hgnc_gene_symbol) %>% filter(n > 1) %>% pull(hgnc_gene_symbol)
+
+MGI_viability <- MGI_viability1 %>%
+  mutate(across(-hgnc_gene_symbol, ~ ifelse(hgnc_gene_symbol %in% dups, NA, .))) %>% 
+  distinct()
 
 # Functional Annotation ----
 
@@ -246,8 +293,13 @@ go_bp <- go_anot_term_raw %>%
   pivot_wider(names_from = Ontology,
               values_from = c("go_id","go_term")) %>% 
   unnest(c(go_id_BP, go_term_BP)) %>% 
-  dplyr::select(-entrez_id)
+  dplyr::select(-entrez_id) %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol)
 
+GO_BP <- hgnc_symbol_template_func() %>% 
+  left_join(go_bp) %>% 
+  distinct()
+  
 go_mf <- go_anot_term_raw %>% 
   dplyr::rename(entrez_id = gene_id) %>% 
   left_join(gene_symbol_entrez_id_mapping) %>% 
@@ -255,7 +307,12 @@ go_mf <- go_anot_term_raw %>%
   pivot_wider(names_from = Ontology,
               values_from = c("go_id","go_term")) %>% 
   unnest(c(go_id_MF, go_term_MF)) %>% 
-  dplyr::select(-entrez_id)
+  dplyr::select(-entrez_id) %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) 
+
+GO_MF <- hgnc_symbol_template_func() %>% 
+  left_join(go_mf) %>% 
+  distinct()
 
 go_cc <- go_anot_term_raw %>% 
   dplyr::rename(entrez_id = gene_id) %>% 
@@ -264,7 +321,12 @@ go_cc <- go_anot_term_raw %>%
   pivot_wider(names_from = Ontology,
               values_from = c("go_id","go_term")) %>% 
   unnest(c(go_id_CC, go_term_CC)) %>% 
-  dplyr::select(-entrez_id)
+  dplyr::select(-entrez_id) %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) 
+
+GO_CC <- hgnc_symbol_template_func() %>% 
+  left_join(go_cc) %>% 
+  distinct()
 
 # reactome
 reactome_annotations <- arrow::read_parquet('./data/raw/api-ftp/reactome_annotations.parquet')
@@ -274,7 +336,12 @@ reactome_annotations2 <- reactome_annotations %>%
   dplyr::rename(entrez_id = 'gene_id')  %>%
   left_join(gene_symbol_entrez_id_mapping) %>%
   dplyr::select(-entrez_id) %>%
-  filter(!is.na(gene_symbol))
+  filter(!is.na(gene_symbol)) %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) 
+
+Reactome <- hgnc_symbol_template_func() %>% 
+  left_join(reactome_annotations2) %>% 
+  distinct()
 
 # Human Disease & Phenotypes ----
 
@@ -334,33 +401,41 @@ genemap9 <- genemap8 %>%
   filter(hgnc_gene_symbol != "") %>% 
   filter(!is.na(phenotypes))
 
-
-
 # lethal phenotypes
 lethal.phenotypes <- arrow::read_parquet('./data/raw/api-ftp/lethal.phenotypes.parquet')
-lethal.phenotypes2 <- lethal.phenotypes %>%
+lethal.phenotypes.phenotype <- lethal.phenotypes %>%
   dplyr::select(
-    omim_id,
-    # omim_phenotype,
-    disease_gene_lethal,
+    omim_phenotype,
+    disease_gene_lethal
+  ) %>% 
+  mutate_all(., ~ ifelse(. == "-", NA, .)) 
+
+lethal.phenotypes.gene <- lethal.phenotypes %>%
+  dplyr::select(
+    gene_symbol,
+    gene_lethal_summary,
     earliest_lethality_category
   ) %>%
   mutate(
     earliest_lethality_category = case_when(
       is.na(earliest_lethality_category) ~ NA_character_,
-      earliest_lethality_category == "L1" ~ "Prenatal death; L1",
-      earliest_lethality_category == "L2" ~ "Neonatal death; L2",
-      earliest_lethality_category == "L3" ~ "Death in infancy; L3",
-      earliest_lethality_category == "L4" ~ "Death in childhood; L4",
-      earliest_lethality_category == "L5" ~ "Death in adolescence; L5",
-      earliest_lethality_category == "L6" ~ "Death in adulthood; L6",
-      earliest_lethality_category == "LU" ~ "Not determined; LU",
-      earliest_lethality_category == "NL" ~ "Non lethal; NL",
+      earliest_lethality_category == "L1" ~ "L1; Prenatal death",
+      earliest_lethality_category == "L2" ~ "L2; Neonatal death",
+      earliest_lethality_category == "L3" ~ "L3; Death in infancy",
+      earliest_lethality_category == "L4" ~ "L4; Death in childhood",
+      earliest_lethality_category == "L5" ~ "L5; Death in adolescence",
+      earliest_lethality_category == "L6" ~ "L6; Death in adulthood",
+      earliest_lethality_category == "LU" ~ "LU; Not determined",
+      earliest_lethality_category == "NL" ~ "NL; Non lethal",
       TRUE ~ earliest_lethality_category
-    )) %>%
-  mutate_all(., ~ ifelse(. == "-", NA, .)) %>%
-  mutate(phenotype_id = as.character(omim_id)) %>%
-  dplyr::select(-omim_id)
+    )
+  ) %>%
+  mutate_all(., ~ ifelse(. == "-", NA, .)) %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) 
+
+OMIM_lethality_categories <- hgnc_symbol_template_func() %>% 
+  left_join(lethal.phenotypes.gene) %>% 
+  distinct()
 
 # panel app
 jfiles_unlist <- read_rds('./data/raw/api-ftp/jfiles_unlist.rds')
@@ -415,7 +490,12 @@ panelapp_df2 <- panelapp_df %>%
     TRUE ~ NA_character_  # optional: handles missing or unexpected values
   )) %>% 
   dplyr::select(gene_symbol, panel_disease_group, confidence_level, mode_of_inheritance) %>% 
-  filter(panel_disease_group != "")
+  filter(panel_disease_group != "") %>% 
+  dplyr::rename(hgnc_gene_symbol = gene_symbol) 
+
+PanelApp_australia <-  hgnc_symbol_template_func() %>% 
+  left_join(panelapp_df2) %>% 
+  distinct()
 
 # Comparative/Evolutionary Genomics ----
 
@@ -428,7 +508,11 @@ mouse_orthologs <- mouse_orthologs %>%
   dplyr::select(-blank)
 orthologs2 <- mouse_orthologs %>%
   dplyr::select(`Human Gene Symbol`, `Human Category For Threshold`, `Mgi Gene Acc Id`, `Mouse Gene Symbol`) %>%
-  dplyr::rename(gene_symbol = `Human Gene Symbol`, ortholog_mapping = `Human Category For Threshold`, mgi_id = `Mgi Gene Acc Id`, mouse_symbol = `Mouse Gene Symbol`)
+  dplyr::rename(hgnc_gene_symbol = `Human Gene Symbol`, ortholog_mapping = `Human Category For Threshold`, mgi_id = `Mgi Gene Acc Id`, mouse_symbol = `Mouse Gene Symbol`)
+
+Orthologs_human_mouse <-  hgnc_symbol_template_func() %>% 
+  left_join(orthologs2) %>% 
+  distinct()
 
 # human paralogs
 human_paralogs <- arrow::read_parquet('./data/raw/api-ftp/human_paralogs.parquet')
@@ -436,7 +520,12 @@ gene_symbol_ensg_id_mappings <- protein.coding.genes %>%
   dplyr::select(symbol, ensembl_gene_id) 
 human_paralogs2 <- human_paralogs %>% 
   left_join(gene_symbol_ensg_id_mappings) %>% 
-  dplyr::select(symbol, hsapiens_paralog_associated_gene_name, hsapiens_paralog_subtype) %>% 
+  dplyr::select(symbol, hsapiens_paralog_associated_gene_name, hsapiens_paralog_subtype, hsapiens_paralog_perc_id_r1) %>% 
   filter(hsapiens_paralog_associated_gene_name != "") %>% 
   distinct() %>% 
-  as.data.frame()
+  as.data.frame() %>% 
+  dplyr::rename(hgnc_gene_symbol = symbol, paralog_hgnc_gene_symbol = hsapiens_paralog_associated_gene_name)
+
+Paralogs_human <-  hgnc_symbol_template_func() %>% 
+  left_join(human_paralogs2) %>% 
+  distinct()
